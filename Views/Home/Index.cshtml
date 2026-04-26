@@ -1,0 +1,36 @@
+@model DashboardViewModel
+
+<section class="cards">
+    <article class="card"><h2>Menu Items</h2><p>@Model.MenuCount</p></article>
+    <article class="card"><h2>Inventory Items</h2><p>@Model.InventoryCount</p></article>
+    <article class="card"><h2>Active Orders</h2><p>@Model.ActiveOrders</p></article>
+</section>
+
+<section>
+    <h2>Recent Orders</h2>
+    <table>
+        <thead>
+        <tr><th>ID</th><th>Table</th><th>Item</th><th>Qty</th><th>Status</th><th>Created (UTC)</th></tr>
+        </thead>
+        <tbody>
+        @if (Model.RecentOrders.Count == 0)
+        {
+            <tr><td colspan="6">No orders yet.</td></tr>
+        }
+        else
+        {
+            foreach (var order in Model.RecentOrders)
+            {
+                <tr>
+                    <td>@order.Id</td>
+                    <td>@order.TableNumber</td>
+                    <td>@order.MenuItem?.Name</td>
+                    <td>@order.Quantity</td>
+                    <td>@order.Status</td>
+                    <td>@order.CreatedAtUtc.ToString("u")</td>
+                </tr>
+            }
+        }
+        </tbody>
+    </table>
+</section>
