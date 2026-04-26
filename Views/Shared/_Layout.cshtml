@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FnB Manager</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+<header class="topbar">
+    <h1>FnB Manager</h1>
+    <nav>
+        <a asp-controller="Home" asp-action="Index">Dashboard</a>
+        <a asp-controller="Menu" asp-action="Index">Menu</a>
+        <a asp-controller="Inventory" asp-action="Index">Inventory</a>
+        <a asp-controller="Orders" asp-action="Index">Orders</a>
+    </nav>
+</header>
+
+<main class="content">
+    @if (TempData["Success"] is string success)
+    {
+        <p class="msg ok">@success</p>
+    }
+    @if (TempData["Error"] is string error)
+    {
+        <p class="msg err">@error</p>
+    }
+
+    @RenderBody()
+</main>
+</body>
+</html>
