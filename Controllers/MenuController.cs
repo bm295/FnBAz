@@ -1,13 +1,12 @@
-using FnBManager.Data;
+using FnBManager.Application.Ports;
 using FnBManager.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FnBManager.Controllers;
 
-public class MenuController(AppDbContext db) : Controller
+public class MenuController(IMenuService menuService) : Controller
 {
-    public async Task<IActionResult> Index() => View(await db.MenuItems.OrderByDescending(x => x.Id).ToListAsync());
+    public async Task<IActionResult> Index() => View(await menuService.GetAllAsync());
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -19,8 +18,7 @@ public class MenuController(AppDbContext db) : Controller
             return RedirectToAction(nameof(Index));
         }
 
-        db.MenuItems.Add(item);
-        await db.SaveChangesAsync();
+        await menuService.CreateAsync(item);
         TempData["Success"] = "Menu item created.";
         return RedirectToAction(nameof(Index));
     }
@@ -29,15 +27,13 @@ public class MenuController(AppDbContext db) : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Delete(int id)
     {
-        var item = await db.MenuItems.FindAsync(id);
-        if (item is null)
+        var deleted = await menuService.DeleteAsync(id);
+        if (!deleted)
         {
             TempData["Error"] = "Menu item not found.";
             return RedirectToAction(nameof(Index));
         }
 
-        db.MenuItems.Remove(item);
-        await db.SaveChangesAsync();
         TempData["Success"] = "Menu item deleted.";
         return RedirectToAction(nameof(Index));
     }
