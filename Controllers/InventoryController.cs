@@ -1,13 +1,12 @@
-using FnBManager.Data;
+using FnBManager.Application.Ports;
 using FnBManager.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FnBManager.Controllers;
 
-public class InventoryController(AppDbContext db) : Controller
+public class InventoryController(IInventoryService inventoryService) : Controller
 {
-    public async Task<IActionResult> Index() => View(await db.InventoryItems.OrderByDescending(x => x.Id).ToListAsync());
+    public async Task<IActionResult> Index() => View(await inventoryService.GetAllAsync());
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -19,8 +18,7 @@ public class InventoryController(AppDbContext db) : Controller
             return RedirectToAction(nameof(Index));
         }
 
-        db.InventoryItems.Add(item);
-        await db.SaveChangesAsync();
+        await inventoryService.CreateAsync(item);
         TempData["Success"] = "Inventory item created.";
         return RedirectToAction(nameof(Index));
     }
@@ -29,15 +27,13 @@ public class InventoryController(AppDbContext db) : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Delete(int id)
     {
-        var item = await db.InventoryItems.FindAsync(id);
-        if (item is null)
+        var deleted = await inventoryService.DeleteAsync(id);
+        if (!deleted)
         {
             TempData["Error"] = "Inventory item not found.";
             return RedirectToAction(nameof(Index));
         }
 
-        db.InventoryItems.Remove(item);
-        await db.SaveChangesAsync();
         TempData["Success"] = "Inventory item deleted.";
         return RedirectToAction(nameof(Index));
     }

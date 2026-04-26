@@ -33,4 +33,5 @@ Open `https://localhost:5001` or the URL shown in the console.
 ## Notes
 
 - The app uses SQLite (`fnbmanager.db`) for simplicity.
+- Event persistence tables are included: `OutboxMessages`, `InboxMessages`, and `DeadLetterMessages` for event-driven workflows.
 - For production workloads, prefer Azure SQL or PostgreSQL.
