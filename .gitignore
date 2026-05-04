@@ -1,5 +1,9 @@
 bin/
 obj/
 .vs/
+.azure/
 *.user
 *.db
+*.db-shm
+*.db-wal
+*.db-journal

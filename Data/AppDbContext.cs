@@ -15,6 +15,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Order>()
+            .HasOne(o => o.MenuItem)
+            .WithMany()
+            .HasForeignKey(o => o.MenuItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         modelBuilder.Entity<InboxMessage>()
             .HasIndex(x => x.ExternalMessageId)
             .IsUnique();

@@ -13,7 +13,7 @@ public class MenuService(IMenuRepository menuRepository) : IMenuService
 
     public Task CreateAsync(MenuItem item) => menuRepository.AddAsync(item);
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> MarkUnavailableAsync(int id)
     {
         var item = await menuRepository.FindByIdAsync(id);
         if (item is null)
@@ -21,7 +21,7 @@ public class MenuService(IMenuRepository menuRepository) : IMenuService
             return false;
         }
 
-        await menuRepository.DeleteAsync(item);
+        await menuRepository.MarkUnavailableAsync(item);
         return true;
     }
 }

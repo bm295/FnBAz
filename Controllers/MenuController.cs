@@ -25,16 +25,16 @@ public class MenuController(IMenuService menuService) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> MarkUnavailable(int id)
     {
-        var deleted = await menuService.DeleteAsync(id);
-        if (!deleted)
+        var markedUnavailable = await menuService.MarkUnavailableAsync(id);
+        if (!markedUnavailable)
         {
             TempData["Error"] = "Menu item not found.";
             return RedirectToAction(nameof(Index));
         }
 
-        TempData["Success"] = "Menu item deleted.";
+        TempData["Success"] = "Menu item marked unavailable.";
         return RedirectToAction(nameof(Index));
     }
 }

@@ -27,10 +27,10 @@
                 <td>@item.Price.ToString("C")</td>
                 <td>@(item.IsAvailable ? "Yes" : "No")</td>
                 <td>
-                    <form asp-action="Delete" method="post">
+                    <form asp-action="MarkUnavailable" method="post">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="id" value="@item.Id" />
-                        <button type="submit">Delete</button>
+                        <button type="submit" disabled="@(!item.IsAvailable)">Mark unavailable</button>
                     </form>
                 </td>
             </tr>

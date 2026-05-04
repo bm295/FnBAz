@@ -17,9 +17,9 @@ public class MenuRepository(AppDbContext db) : IMenuRepository
         await db.SaveChangesAsync();
     }
 
-    public async Task DeleteAsync(MenuItem item)
+    public async Task MarkUnavailableAsync(MenuItem item)
     {
-        db.MenuItems.Remove(item);
+        item.IsAvailable = false;
         await db.SaveChangesAsync();
     }
 
