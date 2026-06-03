@@ -7,15 +7,17 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 var databaseProvider = builder.Configuration.GetValue<string>("Database:Provider") ?? "Sqlite";
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
+var applyMigrationsOnStartup = builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    if (databaseProvider.Equals("AzureSql", StringComparison.OrdinalIgnoreCase) ||
-        databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+    if (IsSqlServerProvider(databaseProvider))
     {
         options.UseSqlServer(connectionString, sqlServer =>
             sqlServer.EnableRetryOnFailure(
@@ -48,10 +50,9 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+if (applyMigrationsOnStartup)
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+    await InitializeDatabaseAsync(app, databaseProvider);
 }
 
 if (!app.Environment.IsDevelopment())
@@ -63,9 +64,29 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.Run();
+
+static bool IsSqlServerProvider(string databaseProvider) =>
+    databaseProvider.Equals("AzureSql", StringComparison.OrdinalIgnoreCase) ||
+    databaseProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase);
+
+static async Task InitializeDatabaseAsync(WebApplication app, string databaseProvider)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    if (IsSqlServerProvider(databaseProvider))
+    {
+        await db.Database.MigrateAsync();
+        return;
+    }
+
+    await db.Database.EnsureCreatedAsync();
+}

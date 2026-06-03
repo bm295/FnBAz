@@ -9,7 +9,7 @@ This repository contains a Food & Beverage management web application built with
 - Inventory management
 - Order management with status workflow
 - Azure App Service deployment-ready structure
-- Configurable SQLite/Azure SQL persistence
+- Configurable SQLite/Azure SQL persistence with migration-based Azure SQL startup
 - Microsoft Entra authentication through Azure App Service
 
 ## Run locally
@@ -160,24 +160,263 @@ The Microsoft Entra app registration created by App Service Authentication is se
 3. Search for `fnbmanager-77700`.
 4. Open the app registration and select Delete.
 
-### Optional Azure SQL free database
+### Azure SQL with managed identity
 
-For a more production-like database, create an Azure SQL Database with the Azure SQL free offer in the Azure portal, then configure this app:
+For Azure SQL, use Microsoft Entra authentication from the App Service managed identity. This avoids storing a SQL username/password in App Service settings.
+
+Create or select an Azure SQL Database first. If you want to stay within a free-account experiment, use the Azure SQL free database offer in the Azure portal. If you create a database by CLI, confirm the selected SKU and cost before running the command.
 
 ```powershell
+$resourceGroup = "rg-fnbmanager-free"
+$location = "southeastasia"
+$appName = "fnbmanager-77700"
+$sqlServerName = "fnbmanager-sql-77700"
+$databaseName = "fnbmanager"
+```
+
+Enable a system-assigned managed identity on the App Service:
+
+```powershell
+$principalId = az webapp identity assign `
+  --resource-group $resourceGroup `
+  --name $appName `
+  --query principalId `
+  --output tsv
+
+Write-Host "App Service managed identity principal id: $principalId"
+```
+
+Allow the App Service outbound addresses through the Azure SQL firewall. Re-run this after changing the App Service plan or region because outbound addresses can change.
+
+```powershell
+$outboundIps = (az webapp show `
+  --resource-group $resourceGroup `
+  --name $appName `
+  --query outboundIpAddresses `
+  --output tsv) -split ","
+
+for ($i = 0; $i -lt $outboundIps.Length; $i++) {
+  az sql server firewall-rule create `
+    --resource-group $resourceGroup `
+    --server $sqlServerName `
+    --name "appservice-outbound-$i" `
+    --start-ip-address $outboundIps[$i] `
+    --end-ip-address $outboundIps[$i]
+}
+```
+
+Set a Microsoft Entra admin on the Azure SQL logical server. Use either your user or an Entra group as the admin.
+
+```powershell
+$entraAdminDisplayName = "<entra-user-or-group-display-name>"
+$entraAdminObjectId = "<entra-user-or-group-object-id>"
+
+az sql server ad-admin create `
+  --resource-group $resourceGroup `
+  --server $sqlServerName `
+  --display-name $entraAdminDisplayName `
+  --object-id $entraAdminObjectId
+```
+
+Grant the App Service identity access to the database. `db_ddladmin` is included because this app applies EF Core migrations on startup when `Database__Provider=AzureSql`. If migrations are later handled by CI/CD, remove `db_ddladmin` and set `Database__ApplyMigrationsOnStartup=false`.
+
+```powershell
+$sql = @"
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '$appName')
+BEGIN
+    CREATE USER [$appName] FROM EXTERNAL PROVIDER;
+END
+
+IF IS_ROLEMEMBER('db_datareader', '$appName') = 0
+    ALTER ROLE db_datareader ADD MEMBER [$appName];
+
+IF IS_ROLEMEMBER('db_datawriter', '$appName') = 0
+    ALTER ROLE db_datawriter ADD MEMBER [$appName];
+
+IF IS_ROLEMEMBER('db_ddladmin', '$appName') = 0
+    ALTER ROLE db_ddladmin ADD MEMBER [$appName];
+"@
+
+sqlcmd `
+  -S "$sqlServerName.database.windows.net" `
+  -d $databaseName `
+  -G `
+  -Q $sql
+```
+
+Configure App Service to use Azure SQL without a SQL password:
+
+```powershell
+$connectionString = "Server=tcp:$sqlServerName.database.windows.net,1433;Database=$databaseName;Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+
 az webapp config appsettings set `
   --resource-group $resourceGroup `
   --name $appName `
   --settings `
     Database__Provider=AzureSql `
-    "ConnectionStrings__DefaultConnection=<azure-sql-connection-string>"
+    Database__ApplyMigrationsOnStartup=true `
+    "ConnectionStrings__DefaultConnection=$connectionString"
 
 az webapp restart `
   --resource-group $resourceGroup `
   --name $appName
 ```
 
-Keep the Azure SQL free database set to pause when the free monthly limit is reached unless you intentionally want billable usage.
+When the app starts with `Database__Provider=AzureSql`, it runs EF Core migrations from `Data/Migrations`. To add future schema changes:
+
+```powershell
+dotnet ef migrations add <MigrationName> --context AppDbContext --output-dir Data\Migrations
+dotnet build FnBAz.sln
+```
+
+For a user-assigned managed identity, add `User Id=<managed-identity-client-id>;` to the Azure SQL connection string.
+
+## Azure API Management (APIM)
+
+This repo now exposes OpenAPI at:
+
+```text
+https://fnbmanager-77700.azurewebsites.net/swagger/v1/swagger.json
+```
+
+You can import that document into Azure API Management so clients call APIM instead of calling App Service directly.
+
+Prerequisites:
+
+- Existing deployed App Service for this repo
+- Azure API Management instance (Consumption is lowest-cost to start)
+
+### Create APIM and import this API
+
+Keep authentication enabled for Swagger and import from a browser-authenticated production download.
+
+```powershell
+$ErrorActionPreference = "Stop"
+
+$resourceGroup = "rg-fnbmanager-free"
+$location = "southeastasia"
+$apimName = "fnbmanager-apim-77700"
+$publisherEmail = "baominh.nguyen.295@gmail.com"
+$publisherName = "FnB Manager"
+$appName = "fnbmanager-77700"
+$apiId = "fnb-manager-api"
+$swaggerPath = ".\swagger.production.json"
+
+# 1) Open this URL in a browser, sign in, and save the response as swagger.production.json
+Start-Process "https://$appName.azurewebsites.net/swagger/v1/swagger.json"
+throw "After saving swagger.production.json in repo root, re-run from validation step below."
+```
+
+Then run:
+
+```powershell
+$ErrorActionPreference = "Stop"
+$resourceGroup = "rg-fnbmanager-free"
+$location = "southeastasia"
+$apimName = "fnbmanager-apim-77700"
+$publisherEmail = "baominh.nguyen.295@gmail.com"
+$publisherName = "FnB Manager"
+$apiId = "fnb-manager-api"
+$swaggerPath = ".\swagger.production.json"
+
+# Validate downloaded file before APIM import
+$raw = Get-Content $swaggerPath -Raw
+if ($raw.TrimStart().StartsWith("<")) {
+  throw "File contains HTML, not OpenAPI JSON. Re-download from browser after successful sign-in."
+}
+
+$doc = $raw | ConvertFrom-Json
+if (-not $doc.openapi) {
+  throw "Downloaded file is JSON but does not contain an OpenAPI document."
+}
+
+Write-Host "Swagger download validated: OpenAPI version $($doc.openapi)"
+
+# Create APIM (first run) and import API definition
+az apim create `
+  --name $apimName `
+  --resource-group $resourceGroup `
+  --location $location `
+  --publisher-email $publisherEmail `
+  --publisher-name $publisherName `
+  --sku-name Consumption
+
+az apim api import `
+  --resource-group $resourceGroup `
+  --service-name $apimName `
+  --api-id $apiId `
+  --path fnb `
+  --specification-format OpenApiJson `
+  --specification-path $swaggerPath
+```
+
+This avoids `consent_required` issues from Azure CLI token flow while still sourcing Swagger from the production URL.
+
+Why this works:
+- Swagger remains protected by App Service Authentication.
+- You fetch Swagger from the production URL with a valid Entra bearer token.
+- APIM imports from a local file, so no unauthenticated server-side fetch is required.
+
+After import, gateway base URL is:
+
+```text
+https://fnbmanager-apim-77700.azure-api.net/fnb
+```
+
+Examples:
+
+- `GET https://fnbmanager-apim-77700.azure-api.net/fnb/api/menu`
+- `GET https://fnbmanager-apim-77700.azure-api.net/fnb/api/inventory`
+- `GET https://fnbmanager-apim-77700.azure-api.net/fnb/api/orders`
+
+### Require a subscription key (recommended)
+
+In Azure Portal:
+
+1. Open API Management > APIs > `fnb-manager-api`.
+2. Open Settings.
+3. Enable `Subscription required`.
+4. Save.
+5. Create or use an existing product and subscription.
+6. Call APIM with `Ocp-Apim-Subscription-Key: <key>`.
+
+### Add common inbound policies
+
+In Azure Portal:
+
+1. Open API Management > APIs > `fnb-manager-api` > Design > Inbound processing.
+2. Add policy snippets such as:
+   - Rate limit
+   - Quota
+   - Validate JWT (if using Entra tokens)
+3. Save and test from the Test tab.
+
+Sample policy XML:
+
+```xml
+<policies>
+  <inbound>
+    <base />
+    <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(context.Subscription?.Key ?? context.Request.IpAddress)" />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
+```
+
+### Authentication model options
+
+- Option 1: Keep App Service Authentication enabled and let APIM forward requests to App Service.
+- Option 2: Move auth checks to APIM (`validate-jwt`) and keep App Service open only to APIM.
+
+For production, prefer a single auth layer with clear ownership and avoid duplicate token enforcement unless required.
 
 ## Notes
 

@@ -15,6 +15,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<MenuItem>()
+            .Property(x => x.Price)
+            .HasPrecision(18, 2);
+
+        modelBuilder.Entity<InventoryItem>()
+            .Property(x => x.Quantity)
+            .HasPrecision(18, 2);
+
+        modelBuilder.Entity<InventoryItem>()
+            .Property(x => x.ReorderLevel)
+            .HasPrecision(18, 2);
+
         modelBuilder.Entity<Order>()
             .HasOne(o => o.MenuItem)
             .WithMany()
