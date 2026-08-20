@@ -8,12 +8,21 @@ public class DashboardService(
     IInventoryService inventoryService,
     IOrderService orderService) : IDashboardService
 {
-    public async Task<DashboardViewModel> GetDashboardAsync() =>
-        new()
+    public async Task<DashboardViewModel> GetDashboardAsync()
+    {
+        var menuCountTask = menuService.CountAsync();
+        var inventoryCountTask = inventoryService.CountAsync();
+        var activeOrdersTask = orderService.CountActiveAsync();
+        var recentOrdersTask = orderService.GetRecentAsync(5);
+
+        await Task.WhenAll(menuCountTask, inventoryCountTask, activeOrdersTask, recentOrdersTask);
+
+        return new DashboardViewModel
         {
-            MenuCount = await menuService.CountAsync(),
-            InventoryCount = await inventoryService.CountAsync(),
-            ActiveOrders = await orderService.CountActiveAsync(),
-            RecentOrders = await orderService.GetRecentAsync(5)
+            MenuCount = await menuCountTask,
+            InventoryCount = await inventoryCountTask,
+            ActiveOrders = await activeOrdersTask,
+            RecentOrders = await recentOrdersTask
         };
+    }
 }
