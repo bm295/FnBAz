@@ -1,4 +1,5 @@
 using FnBManager.Application.Ports;
+using FnBManager.Application.Services;
 using FnBManager.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,15 +13,30 @@ public class ApiOrdersController(IOrderService orderService) : ControllerBase
     public async Task<ActionResult<List<Order>>> GetAll() => Ok(await orderService.GetAllAsync());
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateOrderRequest request)
+    public async Task<IActionResult> Create(
+        [FromBody] CreateOrderRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
     {
         if (!ModelState.IsValid)
         {
             return ValidationProblem(ModelState);
         }
 
-        await orderService.CreateAsync(request.TableNumber, request.MenuItemId, request.Quantity);
-        return Accepted();
+        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 128)
+        {
+            return BadRequest(new { error = "A non-empty Idempotency-Key header (maximum 128 characters) is required." });
+        }
+
+        try
+        {
+            var result = await orderService.CreateIdempotentAsync(
+                request.TableNumber, request.MenuItemId, request.Quantity, idempotencyKey);
+            return Accepted(new { result.OrderId, result.Replayed });
+        }
+        catch (IdempotencyKeyReuseException exception)
+        {
+            return Conflict(new { error = exception.Message });
+        }
     }
 
     [HttpPatch("{id:int}/status")]
