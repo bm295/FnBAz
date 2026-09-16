@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FnBManager.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260915154318_AddOrderIdempotency")]
-    partial class AddOrderIdempotency
+    [Migration("20260915154318_AddOrderRequestDeduplication")]
+    partial class AddOrderRequestDeduplication
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -170,6 +170,14 @@ namespace FnBManager.Data.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
 
+                    b.Property<string>("RequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RequestKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -182,39 +190,11 @@ namespace FnBManager.Data.Migrations
 
                     b.HasIndex("MenuItemId");
 
+                    b.HasIndex("RequestKey")
+                        .IsUnique()
+                        .HasFilter("[RequestKey] IS NOT NULL");
+
                     b.ToTable("Orders");
-                });
-
-            modelBuilder.Entity("FnBManager.Models.OrderIdempotencyRecord", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<int>("OrderId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("RequestHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Key")
-                        .IsUnique();
-
-                    b.ToTable("OrderIdempotencyRecords");
                 });
 
             modelBuilder.Entity("FnBManager.Models.OutboxMessage", b =>

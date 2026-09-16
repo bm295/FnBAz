@@ -15,28 +15,26 @@ public class ApiOrdersController(IOrderService orderService) : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(
         [FromBody] CreateOrderRequest request,
-        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+        [FromHeader(Name = "Idempotency-Key")] string? requestKey)
     {
         if (!ModelState.IsValid)
         {
             return ValidationProblem(ModelState);
         }
 
-        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 128)
+        if (string.IsNullOrWhiteSpace(requestKey) || requestKey.Length > 128)
         {
             return BadRequest(new { error = "A non-empty Idempotency-Key header (maximum 128 characters) is required." });
         }
 
-        try
+        var result = await orderService.CreateAsync(
+            request.TableNumber, request.MenuItemId, request.Quantity, requestKey);
+        if (result.RequestKeyConflict)
         {
-            var result = await orderService.CreateIdempotentAsync(
-                request.TableNumber, request.MenuItemId, request.Quantity, idempotencyKey);
-            return Accepted(new { result.OrderId, result.Replayed });
+            return Conflict(new { error = "Idempotency-Key was already used with a different request payload." });
         }
-        catch (IdempotencyKeyReuseException exception)
-        {
-            return Conflict(new { error = exception.Message });
-        }
+
+        return Accepted(new { result.OrderId, result.Replayed });
     }
 
     [HttpPatch("{id:int}/status")]
