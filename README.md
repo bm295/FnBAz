@@ -21,6 +21,27 @@ dotnet run
 
 Open `https://localhost:5001` or the URL shown in the console.
 
+## Safe request retries
+
+API clients creating an order must send an `Idempotency-Key` header. If a client
+does not receive a response, it can retry the same payload with the same key
+without creating another order or another `order.created` outbox message. The
+response includes `Idempotency-Replayed: true` when it came from an earlier
+successful request. Reusing a key with a different payload returns HTTP 409.
+
+Keys may contain at most 128 characters and should be unique per logical order.
+For example:
+
+```bash
+curl -i -X POST https://localhost:5001/api/orders \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 7bd4c5ce-237f-4f50-bcac-2c829bb90771' \
+  -d '{"tableNumber":"12","menuItemId":1,"quantity":2}'
+```
+
+Status updates are also safe to retry: setting an order to its current status
+succeeds without writing a duplicate `order.status.updated` outbox message.
+
 ## Azure free account deployment
 
 The cheapest Azure path for this repo is Azure App Service Free F1 with SQLite and Azure App Service Authentication. Authentication is handled by Azure before requests reach the app, so no local login code is required.

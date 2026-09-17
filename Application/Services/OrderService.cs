@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FnBManager.Application.Services;
 
-public class OrderService(IOrderRepository orderRepository, IOutboxRepository outboxRepository, AppDbContext db) : IOrderService
+public class OrderService(IOrderRepository orderRepository, AppDbContext db) : IOrderService
 {
     public Task<List<Order>> GetAllAsync() => orderRepository.GetAllWithMenuAsync();
 
@@ -104,10 +104,15 @@ public class OrderService(IOrderRepository orderRepository, IOutboxRepository ou
             return false;
         }
 
-        order.Status = status;
-        await orderRepository.SaveChangesAsync();
+        // A client may retry a PATCH after losing the response. Treat an already
+        // applied transition as successful without publishing the event twice.
+        if (order.Status == status)
+        {
+            return true;
+        }
 
-        await outboxRepository.AddAsync(new OutboxMessage
+        order.Status = status;
+        db.OutboxMessages.Add(new OutboxMessage
         {
             EventType = "order.status.updated",
             Payload = JsonSerializer.Serialize(new
@@ -118,6 +123,7 @@ public class OrderService(IOrderRepository orderRepository, IOutboxRepository ou
             }),
             OccurredAtUtc = DateTime.UtcNow
         });
+        await orderRepository.SaveChangesAsync();
 
         return true;
     }
