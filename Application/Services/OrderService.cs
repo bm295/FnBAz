@@ -96,19 +96,23 @@ public class OrderService(IOrderRepository orderRepository, AppDbContext db) : I
             Convert.FromHexString(order.RequestHash), Convert.FromHexString(requestHash));
     }
 
-    public async Task<bool> UpdateStatusAsync(int id, OrderStatus status)
+    public async Task<OrderStatusUpdateResult> UpdateStatusAsync(
+        int id, OrderStatus expectedStatus, OrderStatus status)
     {
         var order = await orderRepository.FindByIdAsync(id);
         if (order is null)
         {
-            return false;
+            return OrderStatusUpdateResult.NotFound;
         }
 
-        // A client may retry a PATCH after losing the response. Treat an already
-        // applied transition as successful without publishing the event twice.
         if (order.Status == status)
         {
-            return true;
+            return OrderStatusUpdateResult.Replayed;
+        }
+
+        if (order.Status != expectedStatus)
+        {
+            return OrderStatusUpdateResult.Conflict;
         }
 
         order.Status = status;
@@ -123,8 +127,26 @@ public class OrderService(IOrderRepository orderRepository, AppDbContext db) : I
             }),
             OccurredAtUtc = DateTime.UtcNow
         });
-        await orderRepository.SaveChangesAsync();
+        try
+        {
+            await orderRepository.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            var currentStatus = await db.Orders.AsNoTracking()
+                .Where(x => x.Id == id)
+                .Select(x => (OrderStatus?)x.Status)
+                .SingleOrDefaultAsync();
 
-        return true;
+            return currentStatus switch
+            {
+                null => OrderStatusUpdateResult.NotFound,
+                var current when current == status => OrderStatusUpdateResult.Replayed,
+                _ => OrderStatusUpdateResult.Conflict
+            };
+        }
+
+        return OrderStatusUpdateResult.Updated;
     }
 }

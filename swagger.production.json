@@ -264,6 +264,18 @@
         "tags": [
           "ApiOrders"
         ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -284,8 +296,11 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "202": {
+            "description": "Accepted"
+          },
+          "409": {
+            "description": "Idempotency key conflict"
           }
         }
       }
@@ -326,8 +341,11 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "204": {
+            "description": "Updated or already applied"
+          },
+          "409": {
+            "description": "The current status does not match expectedStatus"
           }
         }
       }
@@ -336,17 +354,24 @@
   "components": {
     "schemas": {
       "CreateOrderRequest": {
+        "required": [
+          "tableNumber"
+        ],
         "type": "object",
         "properties": {
           "tableNumber": {
-            "type": "string",
-            "nullable": true
+            "maxLength": 10,
+            "minLength": 1,
+            "type": "string"
           },
           "menuItemId": {
+            "minimum": 1,
             "type": "integer",
             "format": "int32"
           },
           "quantity": {
+            "maximum": 100,
+            "minimum": 1,
             "type": "integer",
             "format": "int32"
           }
@@ -472,8 +497,15 @@
         "format": "int32"
       },
       "UpdateOrderStatusRequest": {
+        "required": [
+          "expectedStatus",
+          "status"
+        ],
         "type": "object",
         "properties": {
+          "expectedStatus": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
           "status": {
             "$ref": "#/components/schemas/OrderStatus"
           }

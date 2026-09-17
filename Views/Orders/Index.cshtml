@@ -1,8 +1,12 @@
 @model IReadOnlyList<Order>
+@{
+    var createRequestKey = Guid.NewGuid().ToString("N");
+}
 
 <h2>Order Management</h2>
 <form asp-action="Create" method="post" class="grid-form">
     @Html.AntiForgeryToken()
+    <input type="hidden" name="requestKey" value="@createRequestKey" />
     <input name="tableNumber" placeholder="Table number" required />
     <select name="menuItemId" required asp-items="ViewBag.MenuItems">
         <option value="">Select menu item</option>
@@ -33,6 +37,7 @@
                     <form asp-action="UpdateStatus" method="post">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="id" value="@order.Id" />
+                        <input type="hidden" name="expectedStatus" value="@order.Status" />
                         <select name="status">
                             @foreach (var status in Enum.GetValues<OrderStatus>())
                             {

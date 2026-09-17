@@ -25,6 +25,7 @@ public class Order
     [Range(1, 100)]
     public int Quantity { get; set; }
 
+    [ConcurrencyCheck]
     public OrderStatus Status { get; set; } = OrderStatus.New;
 
     [MaxLength(128)]
