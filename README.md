@@ -39,8 +39,11 @@ curl -i -X POST https://localhost:5001/api/orders \
   -d '{"tableNumber":"12","menuItemId":1,"quantity":2}'
 ```
 
-Status updates are also safe to retry: setting an order to its current status
-succeeds without writing a duplicate `order.status.updated` outbox message.
+Status update requests include the status the client last observed as
+`expectedStatus`. A repeated request succeeds without writing another event,
+while a stale request that would overwrite a newer transition returns HTTP 409.
+The MVC order forms use the same protections: each rendered create form carries
+a unique request key, and each status form carries the last observed status.
 
 ## Azure free account deployment
 

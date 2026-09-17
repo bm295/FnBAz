@@ -43,13 +43,18 @@ public class ApiOrdersController(IOrderService orderService) : ControllerBase
     [HttpPatch("{id:int}/status")]
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusRequest request)
     {
-        var updated = await orderService.UpdateStatusAsync(id, request.Status);
-        if (!updated)
+        var result = await orderService.UpdateStatusAsync(
+            id, request.ExpectedStatus!.Value, request.Status!.Value);
+        return result switch
         {
-            return NotFound();
-        }
-
-        return NoContent();
+            OrderStatusUpdateResult.NotFound => NotFound(),
+            OrderStatusUpdateResult.Conflict => Conflict(new
+            {
+                error = "The order status changed after it was read. Refresh the order before retrying."
+            }),
+            OrderStatusUpdateResult.Replayed => NoContent(),
+            _ => NoContent()
+        };
     }
 }
 
@@ -67,5 +72,9 @@ public sealed class CreateOrderRequest
 
 public sealed class UpdateOrderStatusRequest
 {
-    public OrderStatus Status { get; set; }
+    [Required, EnumDataType(typeof(OrderStatus))]
+    public OrderStatus? ExpectedStatus { get; set; }
+
+    [Required, EnumDataType(typeof(OrderStatus))]
+    public OrderStatus? Status { get; set; }
 }
