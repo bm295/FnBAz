@@ -1,0 +1,30 @@
+@model IReadOnlyList<Order>
+
+<section>
+    <h2>Recent Orders</h2>
+    <table>
+        <thead>
+        <tr><th>ID</th><th>Table</th><th>Item</th><th>Qty</th><th>Status</th><th>Created (UTC)</th></tr>
+        </thead>
+        <tbody>
+        @if (Model.Count == 0)
+        {
+            <tr><td colspan="6">No orders yet.</td></tr>
+        }
+        else
+        {
+            foreach (var order in Model)
+            {
+                <tr>
+                    <td>@order.Id</td>
+                    <td>@order.TableNumber</td>
+                    <td>@order.MenuItem?.Name</td>
+                    <td>@order.Quantity</td>
+                    <td>@order.Status</td>
+                    <td>@order.CreatedAtUtc.ToString("u")</td>
+                </tr>
+            }
+        }
+        </tbody>
+    </table>
+</section>

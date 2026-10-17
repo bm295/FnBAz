@@ -10,19 +10,35 @@ public class DashboardService(
 {
     public async Task<DashboardViewModel> GetDashboardAsync()
     {
-        var menuCountTask = menuService.CountAsync();
-        var inventoryCountTask = inventoryService.CountAsync();
-        var activeOrdersTask = orderService.CountActiveAsync();
-        var recentOrdersTask = orderService.GetRecentAsync(5);
-
-        await Task.WhenAll(menuCountTask, inventoryCountTask, activeOrdersTask, recentOrdersTask);
+        // These services share a scoped DbContext, which requires sequential queries.
+        var menuCount = await menuService.CountAsync();
+        var inventoryCount = await inventoryService.CountAsync();
+        var activeOrders = await orderService.CountActiveAsync();
+        var recentOrders = await orderService.GetRecentAsync(5);
+        var (favorable, total) = await orderService.GetClosureCountsAsync();
+        var gcd = Gcd(favorable, total);
 
         return new DashboardViewModel
         {
-            MenuCount = await menuCountTask,
-            InventoryCount = await inventoryCountTask,
-            ActiveOrders = await activeOrdersTask,
-            RecentOrders = await recentOrdersTask
+            MenuCount = menuCount,
+            InventoryCount = inventoryCount,
+            ActiveOrders = activeOrders,
+            RecentOrders = recentOrders,
+            ClosedOrders = favorable,
+            TotalOrders = total,
+            ClosedOrderFraction = total == 0 ? string.Empty : $"{favorable / gcd}/{total / gcd}"
         };
+    }
+
+    private static int Gcd(int a, int b)
+    {
+        while (b != 0)
+        {
+            int remainder = a % b;
+            a = b;
+            b = remainder;
+        }
+
+        return a;
     }
 }

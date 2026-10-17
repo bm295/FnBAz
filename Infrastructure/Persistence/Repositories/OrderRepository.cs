@@ -20,6 +20,20 @@ public class OrderRepository(AppDbContext db) : IOrderRepository
 
     public Task<int> CountActiveAsync() => db.Orders.CountAsync(o => o.Status == OrderStatus.New || o.Status == OrderStatus.Preparing);
 
+    public async Task<(int Closed, int Total)> GetClosureCountsAsync()
+    {
+        var counts = await db.Orders
+            .GroupBy(o => 1)
+            .Select(group => new
+            {
+                Closed = group.Count(o => o.Status == OrderStatus.Closed),
+                Total = group.Count()
+            })
+            .SingleOrDefaultAsync();
+
+        return counts is null ? (0, 0) : (counts.Closed, counts.Total);
+    }
+
     public Task<Order?> FindByIdAsync(int id) => db.Orders.FindAsync(id).AsTask();
 
     public async Task AddAsync(Order order)

@@ -1,0 +1,14 @@
+@model DashboardViewModel
+
+<article class="card">
+    <h2>Closed Order Rate</h2>
+    @if (Model.TotalOrders == 0)
+    {
+        <p>No orders yet.</p>
+    }
+    else
+    {
+        <p>@Model.ClosedOrderFraction (@Model.ClosedOrderPercentage.ToString("0.##")%)</p>
+        <small>@Model.ClosedOrders / @Model.TotalOrders orders closed &middot; All time</small>
+    }
+</article>

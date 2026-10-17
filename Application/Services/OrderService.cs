@@ -16,6 +16,8 @@ public class OrderService(IOrderRepository orderRepository, IOutboxRepository ou
 
     public Task<int> CountActiveAsync() => orderRepository.CountActiveAsync();
 
+    public Task<(int Closed, int Total)> GetClosureCountsAsync() => orderRepository.GetClosureCountsAsync();
+
     public async Task CreateAsync(string tableNumber, int menuItemId, int quantity)
     {
         var order = new Order
