@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FnBManager.Application.Services;
 
-public class OrderService(IOrderRepository orderRepository, IOutboxRepository outboxRepository, AppDbContext db) : IOrderService
+public class OrderService(IOrderRepository orderRepository, AppDbContext db) : IOrderService
 {
     public Task<List<Order>> GetAllAsync() => orderRepository.GetAllWithMenuAsync();
 
@@ -18,48 +18,21 @@ public class OrderService(IOrderRepository orderRepository, IOutboxRepository ou
 
     public Task<(int Closed, int Total)> GetClosureCountsAsync() => orderRepository.GetClosureCountsAsync();
 
-    public async Task CreateAsync(string tableNumber, int menuItemId, int quantity)
-    {
-        var order = new Order
-        {
-            TableNumber = tableNumber.Trim(),
-            MenuItemId = menuItemId,
-            Quantity = quantity,
-            Status = OrderStatus.New,
-            CreatedAtUtc = DateTime.UtcNow
-        };
-
-        await orderRepository.AddAsync(order);
-
-        await outboxRepository.AddAsync(new OutboxMessage
-        {
-            EventType = "order.created",
-            Payload = JsonSerializer.Serialize(new
-            {
-                order.Id,
-                order.TableNumber,
-                order.MenuItemId,
-                order.Quantity,
-                order.Status,
-                order.CreatedAtUtc
-            }),
-            OccurredAtUtc = DateTime.UtcNow
-        });
-    }
-
-    public async Task<OrderCreationResult> CreateIdempotentAsync(
-        string tableNumber, int menuItemId, int quantity, string idempotencyKey)
+    public async Task<OrderCreationResult> CreateAsync(
+        string tableNumber, int menuItemId, int quantity, string? requestKey = null)
     {
         var normalizedTableNumber = tableNumber.Trim();
         var requestHash = CreateRequestHash(normalizedTableNumber, menuItemId, quantity);
-        var existing = await db.OrderIdempotencyRecords
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Key == idempotencyKey);
+        var existing = requestKey is null
+            ? null
+            : await db.Orders.AsNoTracking().SingleOrDefaultAsync(x => x.RequestKey == requestKey);
 
         if (existing is not null)
         {
-            EnsureMatchingRequest(existing, requestHash);
-            return new OrderCreationResult(existing.OrderId, Replayed: true);
+            return new OrderCreationResult(
+                existing.Id,
+                Replayed: true,
+                RequestKeyConflict: !RequestMatches(existing, requestHash));
         }
 
         try
@@ -73,21 +46,13 @@ public class OrderService(IOrderRepository orderRepository, IOutboxRepository ou
                     MenuItemId = menuItemId,
                     Quantity = quantity,
                     Status = OrderStatus.New,
+                    RequestKey = requestKey,
+                    RequestHash = requestKey is null ? null : requestHash,
                     CreatedAtUtc = DateTime.UtcNow
                 };
 
                 db.Orders.Add(order);
-                db.OrderIdempotencyRecords.Add(new OrderIdempotencyRecord
-                {
-                    Key = idempotencyKey,
-                    RequestHash = requestHash,
-                    OrderId = order.Id
-                });
                 await db.SaveChangesAsync();
-
-                // The order ID is generated above; keep the record and outbox event in this transaction.
-                var record = db.OrderIdempotencyRecords.Local.Single(x => x.Key == idempotencyKey);
-                record.OrderId = order.Id;
                 db.OutboxMessages.Add(new OutboxMessage
                 {
                     EventType = "order.created",
@@ -102,15 +67,22 @@ public class OrderService(IOrderRepository orderRepository, IOutboxRepository ou
         catch (DbUpdateException)
         {
             db.ChangeTracker.Clear();
-            existing = await db.OrderIdempotencyRecords.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.Key == idempotencyKey);
+            if (requestKey is null)
+            {
+                throw;
+            }
+
+            existing = await db.Orders.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.RequestKey == requestKey);
             if (existing is null)
             {
                 throw;
             }
 
-            EnsureMatchingRequest(existing, requestHash);
-            return new OrderCreationResult(existing.OrderId, Replayed: true);
+            return new OrderCreationResult(
+                existing.Id,
+                Replayed: true,
+                RequestKeyConflict: !RequestMatches(existing, requestHash));
         }
     }
 
@@ -120,27 +92,33 @@ public class OrderService(IOrderRepository orderRepository, IOutboxRepository ou
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
     }
 
-    private static void EnsureMatchingRequest(OrderIdempotencyRecord record, string requestHash)
+    private static bool RequestMatches(Order order, string requestHash)
     {
-        if (!CryptographicOperations.FixedTimeEquals(
-                Convert.FromHexString(record.RequestHash), Convert.FromHexString(requestHash)))
-        {
-            throw new IdempotencyKeyReuseException();
-        }
+        return order.RequestHash is not null && CryptographicOperations.FixedTimeEquals(
+            Convert.FromHexString(order.RequestHash), Convert.FromHexString(requestHash));
     }
 
-    public async Task<bool> UpdateStatusAsync(int id, OrderStatus status)
+    public async Task<OrderStatusUpdateResult> UpdateStatusAsync(
+        int id, OrderStatus expectedStatus, OrderStatus status)
     {
         var order = await orderRepository.FindByIdAsync(id);
         if (order is null)
         {
-            return false;
+            return OrderStatusUpdateResult.NotFound;
+        }
+
+        if (order.Status == status)
+        {
+            return OrderStatusUpdateResult.Replayed;
+        }
+
+        if (order.Status != expectedStatus)
+        {
+            return OrderStatusUpdateResult.Conflict;
         }
 
         order.Status = status;
-        await orderRepository.SaveChangesAsync();
-
-        await outboxRepository.AddAsync(new OutboxMessage
+        db.OutboxMessages.Add(new OutboxMessage
         {
             EventType = "order.status.updated",
             Payload = JsonSerializer.Serialize(new
@@ -151,12 +129,26 @@ public class OrderService(IOrderRepository orderRepository, IOutboxRepository ou
             }),
             OccurredAtUtc = DateTime.UtcNow
         });
+        try
+        {
+            await orderRepository.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            var currentStatus = await db.Orders.AsNoTracking()
+                .Where(x => x.Id == id)
+                .Select(x => (OrderStatus?)x.Status)
+                .SingleOrDefaultAsync();
 
-        return true;
+            return currentStatus switch
+            {
+                null => OrderStatusUpdateResult.NotFound,
+                var current when current == status => OrderStatusUpdateResult.Replayed,
+                _ => OrderStatusUpdateResult.Conflict
+            };
+        }
+
+        return OrderStatusUpdateResult.Updated;
     }
-}
-
-public sealed class IdempotencyKeyReuseException : Exception
-{
-    public IdempotencyKeyReuseException() : base("Idempotency-Key was already used with a different request payload.") { }
 }

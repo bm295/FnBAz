@@ -25,7 +25,14 @@ public class Order
     [Range(1, 100)]
     public int Quantity { get; set; }
 
+    [ConcurrencyCheck]
     public OrderStatus Status { get; set; } = OrderStatus.New;
+
+    [MaxLength(128)]
+    public string? RequestKey { get; set; }
+
+    [MaxLength(64)]
+    public string? RequestHash { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

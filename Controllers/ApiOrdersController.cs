@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FnBManager.Application.Ports;
 using FnBManager.Application.Services;
 using FnBManager.Models;
@@ -15,51 +16,65 @@ public class ApiOrdersController(IOrderService orderService) : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(
         [FromBody] CreateOrderRequest request,
-        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+        [FromHeader(Name = "Idempotency-Key")] string? requestKey)
     {
         if (!ModelState.IsValid)
         {
             return ValidationProblem(ModelState);
         }
 
-        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 128)
+        if (string.IsNullOrWhiteSpace(requestKey) || requestKey.Length > 128)
         {
             return BadRequest(new { error = "A non-empty Idempotency-Key header (maximum 128 characters) is required." });
         }
 
-        try
+        var result = await orderService.CreateAsync(
+            request.TableNumber, request.MenuItemId, request.Quantity, requestKey);
+        if (result.RequestKeyConflict)
         {
-            var result = await orderService.CreateIdempotentAsync(
-                request.TableNumber, request.MenuItemId, request.Quantity, idempotencyKey);
-            return Accepted(new { result.OrderId, result.Replayed });
+            return Conflict(new { error = "Idempotency-Key was already used with a different request payload." });
         }
-        catch (IdempotencyKeyReuseException exception)
-        {
-            return Conflict(new { error = exception.Message });
-        }
+
+        Response.Headers["Idempotency-Key"] = requestKey;
+        Response.Headers["Idempotency-Replayed"] = result.Replayed ? "true" : "false";
+        return Accepted(new { result.OrderId, result.Replayed });
     }
 
     [HttpPatch("{id:int}/status")]
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusRequest request)
     {
-        var updated = await orderService.UpdateStatusAsync(id, request.Status);
-        if (!updated)
+        var result = await orderService.UpdateStatusAsync(
+            id, request.ExpectedStatus!.Value, request.Status!.Value);
+        return result switch
         {
-            return NotFound();
-        }
-
-        return NoContent();
+            OrderStatusUpdateResult.NotFound => NotFound(),
+            OrderStatusUpdateResult.Conflict => Conflict(new
+            {
+                error = "The order status changed after it was read. Refresh the order before retrying."
+            }),
+            OrderStatusUpdateResult.Replayed => NoContent(),
+            _ => NoContent()
+        };
     }
 }
 
 public sealed class CreateOrderRequest
 {
+    [Required, MaxLength(10)]
     public string TableNumber { get; set; } = string.Empty;
+
+    [Range(1, int.MaxValue)]
     public int MenuItemId { get; set; }
+
+    [Range(1, 100)]
     public int Quantity { get; set; }
 }
 
 public sealed class UpdateOrderStatusRequest
 {
-    public OrderStatus Status { get; set; }
+    [Required, EnumDataType(typeof(OrderStatus))]
+    public OrderStatus? ExpectedStatus { get; set; }
+
+    [Required, EnumDataType(typeof(OrderStatus))]
+    public OrderStatus? Status { get; set; }
 }

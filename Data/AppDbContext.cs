@@ -8,8 +8,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<MenuItem> MenuItems => Set<MenuItem>();
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
     public DbSet<Order> Orders => Set<Order>();
-    public DbSet<OrderIdempotencyRecord> OrderIdempotencyRecords => Set<OrderIdempotencyRecord>();
-
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<DeadLetterMessage> DeadLetterMessages => Set<DeadLetterMessage>();
@@ -38,9 +36,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasIndex(x => x.ExternalMessageId)
             .IsUnique();
 
-        modelBuilder.Entity<OrderIdempotencyRecord>()
-            .HasIndex(x => x.Key)
-            .IsUnique();
+        modelBuilder.Entity<Order>()
+            .HasIndex(x => x.RequestKey)
+            .IsUnique()
+            .HasFilter("[RequestKey] IS NOT NULL");
 
         modelBuilder.Entity<DeadLetterMessage>()
             .HasIndex(x => x.OutboxMessageId);
