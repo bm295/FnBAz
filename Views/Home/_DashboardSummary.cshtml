@@ -3,3 +3,15 @@
 <article class="card"><h2>Menu Items</h2><p>@Model.MenuCount</p></article>
 <article class="card"><h2>Inventory Items</h2><p>@Model.InventoryCount</p></article>
 <article class="card"><h2>Active Orders</h2><p>@Model.ActiveOrders</p></article>
+<article class="card">
+    <h2>Best-selling Item</h2>
+    @if (Model.BestSellingMenuItem is { } item)
+    {
+        <p>@item.Name</p>
+        <span>@item.TotalQuantity units ordered (all statuses)</span>
+    }
+    else
+    {
+        <p>No orders yet</p>
+    }
+</article>

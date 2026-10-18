@@ -16,6 +16,7 @@ public class DashboardService(
         var activeOrders = await orderService.CountActiveAsync();
         var recentOrders = await orderService.GetRecentAsync(5);
         var (favorable, total) = await orderService.GetClosureCountsAsync();
+        var bestSellingMenuItem = await orderService.GetBestSellingMenuItemAsync();
         var gcd = Gcd(favorable, total);
 
         return new DashboardViewModel
@@ -24,6 +25,7 @@ public class DashboardService(
             InventoryCount = inventoryCount,
             ActiveOrders = activeOrders,
             RecentOrders = recentOrders,
+            BestSellingMenuItem = bestSellingMenuItem,
             ClosedOrders = favorable,
             TotalOrders = total,
             ClosedOrderFraction = total == 0 ? string.Empty : $"{favorable / gcd}/{total / gcd}"

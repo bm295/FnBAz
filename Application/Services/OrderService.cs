@@ -18,6 +18,8 @@ public class OrderService(IOrderRepository orderRepository, AppDbContext db) : I
 
     public Task<(int Closed, int Total)> GetClosureCountsAsync() => orderRepository.GetClosureCountsAsync();
 
+    public Task<BestSellingMenuItem?> GetBestSellingMenuItemAsync() => orderRepository.GetBestSellingMenuItemAsync();
+
     public async Task<OrderCreationResult> CreateAsync(
         string tableNumber, int menuItemId, int quantity, string? requestKey = null)
     {

@@ -88,5 +88,5 @@ static async Task InitializeDatabaseAsync(WebApplication app, string databasePro
         return;
     }
 
-    await db.Database.EnsureCreatedAsync();
+    await SqliteDatabaseInitializer.InitializeAsync(db);
 }

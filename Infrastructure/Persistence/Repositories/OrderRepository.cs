@@ -20,6 +20,26 @@ public class OrderRepository(AppDbContext db) : IOrderRepository
 
     public Task<int> CountActiveAsync() => db.Orders.CountAsync(o => o.Status == OrderStatus.New || o.Status == OrderStatus.Preparing);
 
+    public async Task<BestSellingMenuItem?> GetBestSellingMenuItemAsync()
+    {
+        // Count quantities across all orders; the earliest inserted order wins ties.
+        var winner = await db.Orders
+            .GroupBy(o => o.MenuItemId)
+            .Select(group => new
+            {
+                MenuItemId = group.Key,
+                TotalQuantity = group.Sum(o => (long)o.Quantity),
+                FirstOrderId = group.Min(o => o.Id)
+            })
+            .Join(db.MenuItems, item => item.MenuItemId, menu => menu.Id,
+                (item, menu) => new { item.MenuItemId, menu.Name, item.TotalQuantity, item.FirstOrderId })
+            .OrderByDescending(item => item.TotalQuantity)
+            .ThenBy(item => item.FirstOrderId)
+            .FirstOrDefaultAsync();
+
+        return winner is null ? null : new BestSellingMenuItem(winner.MenuItemId, winner.Name, winner.TotalQuantity);
+    }
+
     public async Task<(int Closed, int Total)> GetClosureCountsAsync()
     {
         var counts = await db.Orders

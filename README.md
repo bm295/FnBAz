@@ -5,6 +5,7 @@ This repository contains a Food & Beverage management web application built with
 ## Features
 
 - Dashboard metrics (menu/inventory/active orders)
+- Best-selling menu item on the dashboard: sums quantities across all orders and statuses, with the earliest order ID breaking ties; shows an empty state when there are no orders.
 - Menu management
 - Inventory management
 - Order management with status workflow
@@ -445,6 +446,7 @@ For production, prefer a single auth layer with clear ownership and avoid duplic
 ## Notes
 
 - The app uses SQLite (`fnbmanager.db`) for local development.
+- With startup initialization enabled, existing SQLite databases are upgraded with the nullable order request key/hash columns and unique request-key index, preserving existing orders. This compatibility upgrade does not use the Azure SQL migration history.
 - Azure SQL uses EF Core SQL Server retry behavior to handle transient cloud database failures.
 - Event persistence tables are included: `OutboxMessages`, `InboxMessages`, and `DeadLetterMessages` for event-driven workflows.
 - Local `dotnet run` does not use Azure App Service Authentication; authentication is enforced only in Azure App Service.

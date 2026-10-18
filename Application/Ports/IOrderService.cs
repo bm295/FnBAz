@@ -8,6 +8,7 @@ public interface IOrderService
     Task<List<Order>> GetRecentAsync(int take);
     Task<int> CountActiveAsync();
     Task<(int Closed, int Total)> GetClosureCountsAsync();
+    Task<BestSellingMenuItem?> GetBestSellingMenuItemAsync();
     Task<OrderCreationResult> CreateAsync(string tableNumber, int menuItemId, int quantity, string? requestKey = null);
     Task<OrderStatusUpdateResult> UpdateStatusAsync(int id, OrderStatus expectedStatus, OrderStatus status);
 }
