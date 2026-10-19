@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using FnBManager.Application.Ports;
 using FnBManager.Data;
 using FnBManager.Models;
@@ -7,60 +8,100 @@ namespace FnBManager.Infrastructure.Persistence.Repositories;
 
 public class OrderRepository(AppDbContext db) : IOrderRepository
 {
-    public Task<List<Order>> GetAllWithMenuAsync() => db.Orders
-        .Include(o => o.MenuItem)
-        .OrderByDescending(o => o.Id)
-        .ToListAsync();
-
-    public Task<List<Order>> GetRecentWithMenuAsync(int take) => db.Orders
-        .Include(o => o.MenuItem)
-        .OrderByDescending(o => o.Id)
-        .Take(take)
-        .ToListAsync();
-
-    public Task<int> CountActiveAsync() => db.Orders.CountAsync(o => o.Status == OrderStatus.New || o.Status == OrderStatus.Preparing);
-
-    public async Task<BestSellingMenuItem?> GetBestSellingMenuItemAsync()
-    {
-        // Count quantities across all orders; the earliest inserted order wins ties.
-        var winner = await db.Orders
-            .GroupBy(o => o.MenuItemId)
-            .Select(group => new
-            {
-                MenuItemId = group.Key,
-                TotalQuantity = group.Sum(o => (long)o.Quantity),
-                FirstOrderId = group.Min(o => o.Id)
-            })
-            .Join(db.MenuItems, item => item.MenuItemId, menu => menu.Id,
-                (item, menu) => new { item.MenuItemId, menu.Name, item.TotalQuantity, item.FirstOrderId })
-            .OrderByDescending(item => item.TotalQuantity)
-            .ThenBy(item => item.FirstOrderId)
-            .FirstOrDefaultAsync();
-
-        return winner is null ? null : new BestSellingMenuItem(winner.MenuItemId, winner.Name, winner.TotalQuantity);
-    }
-
-    public async Task<(int Closed, int Total)> GetClosureCountsAsync()
-    {
-        var counts = await db.Orders
-            .GroupBy(o => 1)
-            .Select(group => new
-            {
-                Closed = group.Count(o => o.Status == OrderStatus.Closed),
-                Total = group.Count()
-            })
-            .SingleOrDefaultAsync();
-
-        return counts is null ? (0, 0) : (counts.Closed, counts.Total);
-    }
-
     public Task<Order?> FindByIdAsync(int id) => db.Orders.FindAsync(id).AsTask();
 
-    public async Task AddAsync(Order order)
+    public async Task<OrderCreationResult> CreateAsync(Order order)
     {
-        db.Orders.Add(order);
-        await db.SaveChangesAsync();
+        var requestKey = order.RequestKey;
+        var requestHash = order.RequestHash!;
+        var existing = requestKey is null
+            ? null
+            : await db.Orders.AsNoTracking().SingleOrDefaultAsync(x => x.RequestKey == requestKey);
+
+        if (existing is not null)
+        {
+            return new OrderCreationResult(
+                existing.Id,
+                Replayed: true,
+                RequestKeyConflict: !RequestMatches(existing, requestHash));
+        }
+
+        try
+        {
+            return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                await using var transaction = await db.Database.BeginTransactionAsync();
+                var newOrder = new Order
+                {
+                    TableNumber = order.TableNumber,
+                    MenuItemId = order.MenuItemId,
+                    Quantity = order.Quantity,
+                    Status = order.Status,
+                    RequestKey = order.RequestKey,
+                    RequestHash = order.RequestHash,
+                    CreatedAtUtc = order.CreatedAtUtc
+                };
+                db.Orders.Add(newOrder);
+                await db.SaveChangesAsync();
+                db.OutboxMessages.Add(OrderOutboxMessageFactory.Created(newOrder));
+                await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return new OrderCreationResult(newOrder.Id, Replayed: false);
+            });
+        }
+        catch (DbUpdateException)
+        {
+            db.ChangeTracker.Clear();
+            if (requestKey is null)
+            {
+                throw;
+            }
+
+            existing = await db.Orders.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.RequestKey == requestKey);
+            if (existing is null)
+            {
+                throw;
+            }
+
+            return new OrderCreationResult(
+                existing.Id,
+                Replayed: true,
+                RequestKeyConflict: !RequestMatches(existing, requestHash));
+        }
     }
 
-    public Task SaveChangesAsync() => db.SaveChangesAsync();
+    private static bool RequestMatches(Order order, string requestHash)
+    {
+        return order.RequestHash is not null && CryptographicOperations.FixedTimeEquals(
+            Convert.FromHexString(order.RequestHash), Convert.FromHexString(requestHash));
+    }
+
+    public async Task<OrderStatusUpdateResult> SaveStatusAsync(Order order)
+    {
+        var id = order.Id;
+        var status = order.Status;
+        db.OutboxMessages.Add(OrderOutboxMessageFactory.StatusUpdated(order));
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            var currentStatus = await db.Orders.AsNoTracking()
+                .Where(x => x.Id == id)
+                .Select(x => (OrderStatus?)x.Status)
+                .SingleOrDefaultAsync();
+
+            return currentStatus switch
+            {
+                null => OrderStatusUpdateResult.NotFound,
+                var current when current == status => OrderStatusUpdateResult.Replayed,
+                _ => OrderStatusUpdateResult.Conflict
+            };
+        }
+
+        return OrderStatusUpdateResult.Updated;
+    }
 }

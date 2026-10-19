@@ -2,14 +2,17 @@ using FnBManager.Models;
 
 namespace FnBManager.Application.Ports;
 
+/// <summary>Persists order changes and their outbox messages atomically.</summary>
 public interface IOrderRepository
 {
-    Task<List<Order>> GetAllWithMenuAsync();
-    Task<List<Order>> GetRecentWithMenuAsync(int take);
-    Task<int> CountActiveAsync();
-    Task<(int Closed, int Total)> GetClosureCountsAsync();
-    Task<BestSellingMenuItem?> GetBestSellingMenuItemAsync();
+    Task<OrderCreationResult> CreateAsync(Order order);
+
+    /// <summary>Loads an order for modification within this scoped repository.</summary>
     Task<Order?> FindByIdAsync(int id);
-    Task AddAsync(Order order);
-    Task SaveChangesAsync();
+
+    /// <summary>
+    /// Saves an order loaded by this repository, including its status event.
+    /// Maps optimistic concurrency failures to the current write outcome.
+    /// </summary>
+    Task<OrderStatusUpdateResult> SaveStatusAsync(Order order);
 }
