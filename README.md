@@ -450,3 +450,21 @@ For production, prefer a single auth layer with clear ownership and avoid duplic
 - Azure SQL uses EF Core SQL Server retry behavior to handle transient cloud database failures.
 - Event persistence tables are included: `OutboxMessages`, `InboxMessages`, and `DeadLetterMessages` for event-driven workflows.
 - Local `dotnet run` does not use Azure App Service Authentication; authentication is enforced only in Azure App Service.
+
+## Order write boundary
+
+`OrderService` prepares orders and decides status-update outcomes. It depends on
+`IOrderWriteStore` for writes and `IOrderRepository` for read queries.
+`EfOrderWriteStore` owns EF Core transactions, database retry/concurrency handling,
+and atomic persistence of order changes with their outbox messages.
+`OrderOutboxMessageFactory` owns event names and JSON payloads.
+
+The write store is scoped to the request: status changes must be saved through the
+same store that loaded the order. Creating an order and recording `order.created`
+remain in one transaction; a failed outbox write rolls back the order.
+
+Run the SQLite regression tests with:
+
+```bash
+dotnet test FnBAz.sln
+```

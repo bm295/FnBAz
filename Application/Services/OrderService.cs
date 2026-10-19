@@ -1,14 +1,11 @@
-using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 using FnBManager.Application.Ports;
-using FnBManager.Data;
 using FnBManager.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace FnBManager.Application.Services;
 
-public class OrderService(IOrderRepository orderRepository, AppDbContext db) : IOrderService
+public class OrderService(IOrderRepository orderRepository, IOrderWriteStore orderWriteStore) : IOrderService
 {
     public Task<List<Order>> GetAllAsync() => orderRepository.GetAllWithMenuAsync();
 
@@ -20,72 +17,24 @@ public class OrderService(IOrderRepository orderRepository, AppDbContext db) : I
 
     public Task<BestSellingMenuItem?> GetBestSellingMenuItemAsync() => orderRepository.GetBestSellingMenuItemAsync();
 
-    public async Task<OrderCreationResult> CreateAsync(
+    public Task<OrderCreationResult> CreateAsync(
         string tableNumber, int menuItemId, int quantity, string? requestKey = null)
     {
         var normalizedTableNumber = tableNumber.Trim();
-        var requestHash = CreateRequestHash(normalizedTableNumber, menuItemId, quantity);
-        var existing = requestKey is null
-            ? null
-            : await db.Orders.AsNoTracking().SingleOrDefaultAsync(x => x.RequestKey == requestKey);
-
-        if (existing is not null)
+        var order = new Order
         {
-            return new OrderCreationResult(
-                existing.Id,
-                Replayed: true,
-                RequestKeyConflict: !RequestMatches(existing, requestHash));
-        }
+            TableNumber = normalizedTableNumber,
+            MenuItemId = menuItemId,
+            Quantity = quantity,
+            Status = OrderStatus.New,
+            RequestKey = requestKey,
+            RequestHash = requestKey is null
+                ? null
+                : CreateRequestHash(normalizedTableNumber, menuItemId, quantity),
+            CreatedAtUtc = DateTime.UtcNow
+        };
 
-        try
-        {
-            return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-            {
-                await using var transaction = await db.Database.BeginTransactionAsync();
-                var order = new Order
-                {
-                    TableNumber = normalizedTableNumber,
-                    MenuItemId = menuItemId,
-                    Quantity = quantity,
-                    Status = OrderStatus.New,
-                    RequestKey = requestKey,
-                    RequestHash = requestKey is null ? null : requestHash,
-                    CreatedAtUtc = DateTime.UtcNow
-                };
-
-                db.Orders.Add(order);
-                await db.SaveChangesAsync();
-                db.OutboxMessages.Add(new OutboxMessage
-                {
-                    EventType = "order.created",
-                    Payload = JsonSerializer.Serialize(new { order.Id, order.TableNumber, order.MenuItemId, order.Quantity, order.Status, order.CreatedAtUtc }),
-                    OccurredAtUtc = DateTime.UtcNow
-                });
-                await db.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return new OrderCreationResult(order.Id, Replayed: false);
-            });
-        }
-        catch (DbUpdateException)
-        {
-            db.ChangeTracker.Clear();
-            if (requestKey is null)
-            {
-                throw;
-            }
-
-            existing = await db.Orders.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.RequestKey == requestKey);
-            if (existing is null)
-            {
-                throw;
-            }
-
-            return new OrderCreationResult(
-                existing.Id,
-                Replayed: true,
-                RequestKeyConflict: !RequestMatches(existing, requestHash));
-        }
+        return orderWriteStore.CreateAsync(order);
     }
 
     private static string CreateRequestHash(string tableNumber, int menuItemId, int quantity)
@@ -94,16 +43,10 @@ public class OrderService(IOrderRepository orderRepository, AppDbContext db) : I
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
     }
 
-    private static bool RequestMatches(Order order, string requestHash)
-    {
-        return order.RequestHash is not null && CryptographicOperations.FixedTimeEquals(
-            Convert.FromHexString(order.RequestHash), Convert.FromHexString(requestHash));
-    }
-
     public async Task<OrderStatusUpdateResult> UpdateStatusAsync(
         int id, OrderStatus expectedStatus, OrderStatus status)
     {
-        var order = await orderRepository.FindByIdAsync(id);
+        var order = await orderWriteStore.FindByIdAsync(id);
         if (order is null)
         {
             return OrderStatusUpdateResult.NotFound;
@@ -120,37 +63,6 @@ public class OrderService(IOrderRepository orderRepository, AppDbContext db) : I
         }
 
         order.Status = status;
-        db.OutboxMessages.Add(new OutboxMessage
-        {
-            EventType = "order.status.updated",
-            Payload = JsonSerializer.Serialize(new
-            {
-                order.Id,
-                order.Status,
-                UpdatedAtUtc = DateTime.UtcNow
-            }),
-            OccurredAtUtc = DateTime.UtcNow
-        });
-        try
-        {
-            await orderRepository.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            db.ChangeTracker.Clear();
-            var currentStatus = await db.Orders.AsNoTracking()
-                .Where(x => x.Id == id)
-                .Select(x => (OrderStatus?)x.Status)
-                .SingleOrDefaultAsync();
-
-            return currentStatus switch
-            {
-                null => OrderStatusUpdateResult.NotFound,
-                var current when current == status => OrderStatusUpdateResult.Replayed,
-                _ => OrderStatusUpdateResult.Conflict
-            };
-        }
-
-        return OrderStatusUpdateResult.Updated;
+        return await orderWriteStore.SaveStatusAsync(order);
     }
 }
