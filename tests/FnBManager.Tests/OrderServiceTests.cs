@@ -2,8 +2,8 @@ using System.Text.Json;
 using FnBManager.Application.Ports;
 using FnBManager.Application.Services;
 using FnBManager.Data;
-using FnBManager.Infrastructure.Persistence;
 using FnBManager.Infrastructure.Persistence.Repositories;
+using FnBManager.Infrastructure.Persistence.Queries;
 using FnBManager.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -98,20 +98,20 @@ public sealed class OrderServiceTests
         using var connection = OpenDatabase();
         await using var staleDb = await CreateContextAsync(connection);
         var created = await CreateService(staleDb).CreateAsync("12", 1, 2, "concurrent");
-        var store = new EfOrderWriteStore(staleDb);
-        var stale = (await store.FindByIdAsync(created.OrderId))!;
+        var repository = new OrderRepository(staleDb);
+        var stale = (await repository.FindByIdAsync(created.OrderId))!;
         await using (var winnerDb = new AppDbContext(Options(connection)))
         {
             await CreateService(winnerDb).UpdateStatusAsync(created.OrderId, OrderStatus.New, winningStatus);
         }
         stale.Status = OrderStatus.Preparing;
-        Assert.Equal(expected, await store.SaveStatusAsync(stale));
+        Assert.Equal(expected, await repository.SaveStatusAsync(stale));
         Assert.Equal(2, await staleDb.OutboxMessages.CountAsync());
         Assert.Equal(winningStatus, (await staleDb.Orders.AsNoTracking().SingleAsync()).Status);
     }
 
     private static OrderService CreateService(AppDbContext db) =>
-        new(new OrderRepository(db), new EfOrderWriteStore(db));
+        new(new OrderQueries(db), new OrderRepository(db));
 
     private static SqliteConnection OpenDatabase()
     {

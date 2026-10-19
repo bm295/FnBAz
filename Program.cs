@@ -2,7 +2,7 @@ using FnBManager.Application.Ports;
 using FnBManager.Application.Services;
 using FnBManager.Data;
 using FnBManager.Infrastructure.Persistence.Repositories;
-using FnBManager.Infrastructure.Persistence;
+using FnBManager.Infrastructure.Persistence.Queries;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,7 +41,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IMenuRepository, MenuRepository>();
 builder.Services.AddScoped<IInventoryRepository, InventoryRepository>();
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
-builder.Services.AddScoped<IOrderWriteStore, EfOrderWriteStore>();
+builder.Services.AddScoped<IOrderQueries, OrderQueries>();
 builder.Services.AddScoped<IOutboxRepository, OutboxRepository>();
 builder.Services.AddScoped<IDeadLetterRepository, DeadLetterRepository>();
 

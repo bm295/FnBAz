@@ -5,17 +5,17 @@ using FnBManager.Models;
 
 namespace FnBManager.Application.Services;
 
-public class OrderService(IOrderRepository orderRepository, IOrderWriteStore orderWriteStore) : IOrderService
+public class OrderService(IOrderQueries orderQueries, IOrderRepository orderRepository) : IOrderService
 {
-    public Task<List<Order>> GetAllAsync() => orderRepository.GetAllWithMenuAsync();
+    public Task<List<Order>> GetAllAsync() => orderQueries.GetAllWithMenuAsync();
 
-    public Task<List<Order>> GetRecentAsync(int take) => orderRepository.GetRecentWithMenuAsync(take);
+    public Task<List<Order>> GetRecentAsync(int take) => orderQueries.GetRecentWithMenuAsync(take);
 
-    public Task<int> CountActiveAsync() => orderRepository.CountActiveAsync();
+    public Task<int> CountActiveAsync() => orderQueries.CountActiveAsync();
 
-    public Task<(int Closed, int Total)> GetClosureCountsAsync() => orderRepository.GetClosureCountsAsync();
+    public Task<(int Closed, int Total)> GetClosureCountsAsync() => orderQueries.GetClosureCountsAsync();
 
-    public Task<BestSellingMenuItem?> GetBestSellingMenuItemAsync() => orderRepository.GetBestSellingMenuItemAsync();
+    public Task<BestSellingMenuItem?> GetBestSellingMenuItemAsync() => orderQueries.GetBestSellingMenuItemAsync();
 
     public Task<OrderCreationResult> CreateAsync(
         string tableNumber, int menuItemId, int quantity, string? requestKey = null)
@@ -34,7 +34,7 @@ public class OrderService(IOrderRepository orderRepository, IOrderWriteStore ord
             CreatedAtUtc = DateTime.UtcNow
         };
 
-        return orderWriteStore.CreateAsync(order);
+        return orderRepository.CreateAsync(order);
     }
 
     private static string CreateRequestHash(string tableNumber, int menuItemId, int quantity)
@@ -46,7 +46,7 @@ public class OrderService(IOrderRepository orderRepository, IOrderWriteStore ord
     public async Task<OrderStatusUpdateResult> UpdateStatusAsync(
         int id, OrderStatus expectedStatus, OrderStatus status)
     {
-        var order = await orderWriteStore.FindByIdAsync(id);
+        var order = await orderRepository.FindByIdAsync(id);
         if (order is null)
         {
             return OrderStatusUpdateResult.NotFound;
@@ -63,6 +63,6 @@ public class OrderService(IOrderRepository orderRepository, IOrderWriteStore ord
         }
 
         order.Status = status;
-        return await orderWriteStore.SaveStatusAsync(order);
+        return await orderRepository.SaveStatusAsync(order);
     }
 }
