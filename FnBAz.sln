@@ -4,12 +4,18 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FnBManager", "FnBManager.csproj", "{2857946B-82E9-EA61-DD46-A7E13A38C458}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FnBManager.Tests", "tests/FnBManager.Tests/FnBManager.Tests.csproj", "{ECA318B3-79AB-45DA-9541-318973965A98}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{ECA318B3-79AB-45DA-9541-318973965A98}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ECA318B3-79AB-45DA-9541-318973965A98}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ECA318B3-79AB-45DA-9541-318973965A98}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ECA318B3-79AB-45DA-9541-318973965A98}.Release|Any CPU.Build.0 = Release|Any CPU
 		{2857946B-82E9-EA61-DD46-A7E13A38C458}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{2857946B-82E9-EA61-DD46-A7E13A38C458}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2857946B-82E9-EA61-DD46-A7E13A38C458}.Release|Any CPU.ActiveCfg = Release|Any CPU
