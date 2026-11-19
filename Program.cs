@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<FnBManager.Controllers.GovernedDecisionStore>();
 
 var databaseProvider = builder.Configuration.GetValue<string>("Database:Provider") ?? "Sqlite";
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
